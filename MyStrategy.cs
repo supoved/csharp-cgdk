@@ -20,6 +20,9 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             if (!_team.ContainsKey(self.Id))
                 _team.Add(self.Id, PickRole(_team));
 
+            if (world.GetMyPlayer().IsJustScoredGoal || world.GetMyPlayer().IsJustMissedGoal)
+                return;
+
             if (self.Id == world.Puck.OwnerHockeyistId)
             {
                 FollowTactics.Atack(system);
@@ -157,7 +160,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
         {
             var player = system.World.GetMyPlayer();
             var net = GetNetPoint(system, true);
-            
+
             //var puckDistanceKoef = (200 * Math.Abs(system.World.Puck.X - net.X) / system.World.Width) + 100;
             var puckDistanceKoef = 200;
             double defX = (player.NetBack > player.NetFront ? -1 : 1) * puckDistanceKoef + net.X;
@@ -209,7 +212,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             return system.World.Hockeyists
                 .Where(_ => _.Type != HockeyistType.Goalie)
                 .Select(_ => new { distance = system.World.Puck.GetDistanceTo(_), isTeammate = _.IsTeammate })
-                .Select(_ => _.isTeammate ? _.distance / 2 : _.distance )
+                .Select(_ => _.isTeammate ? _.distance / 2 : _.distance)
                 .Min();
         }
 
@@ -226,7 +229,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var netX = (player.NetBack + player.NetFront) / 2;
             var netY = (player.NetBottom + player.NetTop) / 2;
 
-            return new Point {X = netX, Y = netY};
+            return new Point { X = netX, Y = netY };
         }
 
         public static void PursuePuck(System system)
@@ -234,12 +237,9 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var player = system.World.GetMyPlayer();
 
             var distanceToPuck = system.Self.GetDistanceTo(system.World.Puck.X, system.World.Puck.Y);
+            var closestEnemy = system.World.Hockeyists.Where(_ => !_.IsTeammate && _.Type != HockeyistType.Goalie).OrderBy(_ => _.GetDistanceTo(system.Self)).FirstOrDefault();
 
-            if (distanceToPuck > system.Game.StickLength)
-            {
-                DoAction.MoveTo(system, system.World.Puck.ToPoint());
-            }
-            else
+            if (distanceToPuck < system.Game.StickLength)
             {
                 if (system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id)
                 {
@@ -253,7 +253,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                     }
                     else
                     {
-                        if (system.Self.GetAngleTo(system.World.Puck) > system.Game.StickSector)
+                        if (Math.Abs(system.Self.GetAngleTo(system.World.Puck)) > system.Game.StickSector)
                         {
                             DoAction.FaceTo(system, system.World.Puck.ToPoint());
                         }
@@ -266,6 +266,22 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                         }
                     }
                 }
+            }
+            else if (closestEnemy != null && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength && system.Self.RemainingCooldownTicks == 0)
+            {
+                var enemyAngle = Math.Abs(system.Self.GetAngleTo(closestEnemy));
+                if (enemyAngle > system.Game.StickSector && Math.Abs(enemyAngle - system.Game.StickSector) < 0.3 )
+                {
+                    DoAction.FaceTo(system, new Point { X = closestEnemy.X, Y = closestEnemy.Y });
+                }
+                else
+                {
+                    system.Move.Action = ActionType.Strike;
+                }
+            }
+            else
+            {
+                DoAction.MoveTo(system, system.World.Puck.ToPoint());
             }
         }
 
