@@ -172,35 +172,35 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var minDistanceToPuck = GetMinDustanceToPuck(system);
             var isPuckInStrikeZone = IsPuckInStrikeZone(system);
 
-            if (distanceToPuck < system.Game.StickLength && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id)
+            if (distanceToPuck < system.Game.StickLength && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id) //puck is near and not under control
             {
                 PursuePuck(system);
             }
-            if (isPuckInStrikeZone && distanceToPuck < system.Game.StickLength * 4 && system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id)
-            {
-                PursuePuck(system);
-            }
-            else if (system.World.Puck.X > system.Self.X && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id)
+            ////if (isPuckInStrikeZone && distanceToPuck < system.Game.StickLength * 4 && system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id) //enemy with puck in strike zone
+            ////{
+            ////    PursuePuck(system);
+            ////}
+            else if (system.World.Puck.GetDistanceTo(net.X, net.Y) > system.Self.GetDistanceTo(net.X, net.Y) && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id) //puck is closer to net than self
             {
                 DoAction.MoveTo(system, new Point { X = defX, Y = defY });
             }
-            else if (distanceToPuck < system.Game.StickLength * 2.5 && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id)
+            else if (distanceToPuck < system.Game.StickLength * 2.5 && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id) // puck is not far and not under control
             {
                 PursuePuck(system);
             }
-            else if (distanceToPuck < minDistanceToPuck)
+            else if (distanceToPuck < minDistanceToPuck && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id) //puck is closer to me than other players and not unde control
             {
                 PursuePuck(system);
             }
-            else if (distanceToNet > system.Game.StickLength * 2)
+            else if (distanceToNet > system.Game.StickLength * 2) // I am too far away
             {
                 DoAction.MoveTo(system, new Point { X = defX, Y = defY });
             }
-            else if (distanceToNet > system.Game.StickLength / 2)
+            else if (distanceToNet > system.Game.StickLength / 2) // I am near def point
             {
                 DoAction.MoveTo(system, new Point { X = defX, Y = defY }, false);
             }
-            else
+            else //nothing to do
             {
                 DoAction.Stop(system);
                 DoAction.FaceTo(system, system.World.Puck.ToPoint());
@@ -249,7 +249,11 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             {
                 if (system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id) //enemy with puck at strikerange
                 {
-                    if (Math.Abs(system.Self.GetAngleTo(system.World.Puck)) > system.Game.StickSector / 2)
+                    if (system.Self.RemainingCooldownTicks > 0)
+                    {
+                        DoAction.MoveTo(system, system.World.Puck.ToPoint(), false);
+                    }
+                    else if (Math.Abs(system.Self.GetAngleTo(system.World.Puck)) > system.Game.StickSector / 2)
                     {
                         DoAction.FaceTo(system, system.World.Puck.ToPoint());
                     }
@@ -284,10 +288,10 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                     }
                 }
             }
-            else if (closestEnemy != null && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength && system.Self.RemainingCooldownTicks == 0)
+            else if (closestEnemy != null && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength * 2 / 3 && system.Self.RemainingCooldownTicks == 0)
             {
                 var enemyAngle = Math.Abs(system.Self.GetAngleTo(closestEnemy));
-                if (enemyAngle > system.Game.StickSector / 2 && Math.Abs(enemyAngle - system.Game.StickSector / 2) < 0.15)
+                if (enemyAngle > system.Game.StickSector / 2 && Math.Abs(enemyAngle - system.Game.StickSector / 2) > 0.15)
                 {
                     DoAction.FaceTo(system, new Point { X = closestEnemy.X, Y = closestEnemy.Y });
                 }
