@@ -232,6 +232,12 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             return new Point { X = netX, Y = netY };
         }
 
+        public static double SpeedValue(double speedX, double speedY)
+        {
+            return Math.Sqrt(Math.Abs(speedX) * (Math.Abs(speedX)
+                + Math.Abs(speedY) * Math.Abs(speedY)));
+        }
+
         public static void PursuePuck(System system)
         {
             var player = system.World.GetMyPlayer();
@@ -241,9 +247,20 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
             if (distanceToPuck < system.Game.StickLength)
             {
-                if (system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id)
+                if (system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id) //enemy with puck at strikerange
                 {
-                    system.Move.Action = ActionType.Strike;
+                    if (Math.Abs(system.Self.GetAngleTo(system.World.Puck)) > system.Game.StickSector / 2)
+                    {
+                        DoAction.FaceTo(system, system.World.Puck.ToPoint());
+                    }
+                    else
+                    {
+                        var puckOwner = system.World.Hockeyists.FirstOrDefault(_ => _.Id == system.World.Puck.OwnerHockeyistId);
+                        if (puckOwner != null && SpeedValue(puckOwner.SpeedX, puckOwner.SpeedY) > SpeedValue(system.Self.SpeedX, system.Self.SpeedY))
+                            system.Move.Action = ActionType.Strike;
+                        else
+                            system.Move.Action = ActionType.TakePuck;
+                    }
                 }
                 else if (system.World.Puck.OwnerHockeyistId == -1)
                 {
@@ -253,7 +270,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                     }
                     else
                     {
-                        if (Math.Abs(system.Self.GetAngleTo(system.World.Puck)) > system.Game.StickSector/2)
+                        if (Math.Abs(system.Self.GetAngleTo(system.World.Puck)) > system.Game.StickSector / 2)
                         {
                             DoAction.FaceTo(system, system.World.Puck.ToPoint());
                         }
@@ -270,7 +287,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             else if (closestEnemy != null && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength && system.Self.RemainingCooldownTicks == 0)
             {
                 var enemyAngle = Math.Abs(system.Self.GetAngleTo(closestEnemy));
-                if (enemyAngle > system.Game.StickSector/2 && Math.Abs(enemyAngle - system.Game.StickSector/2) < 0.15 )
+                if (enemyAngle > system.Game.StickSector / 2 && Math.Abs(enemyAngle - system.Game.StickSector / 2) < 0.15)
                 {
                     DoAction.FaceTo(system, new Point { X = closestEnemy.X, Y = closestEnemy.Y });
                 }
