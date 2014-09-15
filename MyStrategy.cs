@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -23,7 +23,34 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             if (world.GetMyPlayer().IsJustScoredGoal || world.GetMyPlayer().IsJustMissedGoal)
                 return;
 
-            if (self.Id == world.Puck.OwnerHockeyistId)
+            if (system.Self.SwingTicks > 0)
+            {
+                var closestEnemy = system.GetClosestEnemy();
+                if (system.World.Puck.OwnerHockeyistId == system.Self.Id)
+                {
+                    DoAction.Strike(system);
+                }
+                else if (closestEnemy != null && system.Self.GetDistanceTo(closestEnemy) < system.Game.StickLength && system.Self.GetAngleTo(closestEnemy) < system.Game.StickSector/2)
+                {
+                    var nextEnemyPosition = new Point(closestEnemy.X + closestEnemy.SpeedX, closestEnemy.Y + closestEnemy.SpeedY);
+                    var enemyWillBeInZoneNextTurn = system.Self.GetDistanceTo(nextEnemyPosition.X, nextEnemyPosition.Y) < system.Game.StickLength * 2 / 3
+                        && Math.Abs(system.Self.GetAngleTo(nextEnemyPosition.X, nextEnemyPosition.Y)) < system.Game.StickSector / 2;
+
+                    if (enemyWillBeInZoneNextTurn && system.Self.SwingTicks < system.Game.MaxEffectiveSwingTicks)
+                    {
+                        system.Move.Action = ActionType.Swing;
+                    }
+                    else
+                    {
+                        system.Move.Action = ActionType.Strike;
+                    }
+                }
+                else
+                {
+                    system.Move.Action = ActionType.CancelStrike;
+                }
+            }
+            else if (self.Id == world.Puck.OwnerHockeyistId)
             {
                 FollowTactics.Atack(system);
             }
@@ -82,6 +109,14 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
     {
         public double X { get; set; }
         public double Y { get; set; }
+
+        public Point(double x, double y) : this()
+        {
+            this.X = x;
+            this.Y = y;
+        }
+
+
     }
 
     public enum HockeyistRole
@@ -108,15 +143,46 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
         public static void MoveTo(System system, Point target, bool rush = true)
         {
             //todo: calculate fastast way with analizing current position and speed
-            var defAngle = system.Self.GetAngleTo(target.X, target.Y);
-            if (Math.Abs(defAngle) > Math.PI / 2)
+            var distanceToTarget = system.Self.GetDistanceTo(target.X, target.Y);
+            var angleToTarget = system.Self.GetAngleTo(target.X, target.Y);
+            var selfSpeed = Math.Sqrt(Math.Abs(system.Self.SpeedX) + Math.Abs(system.Self.SpeedY));
+
+            var timeToTarget = distanceToTarget / selfSpeed;
+            var k = distanceToTarget / system.Game.StickLength > 1 ? 1 : (distanceToTarget % system.Game.StickLength) / 10;
+
+            //HockeyistMaxSpeed
+            //getHockeyistSpeedUpFactor
+
+
+            if (Math.Abs(angleToTarget) > Math.PI / 2 && distanceToTarget < system.Game.StickLength * 4) //движение назад, так быстрее
             {
-                system.Move.SpeedUp = rush ? -1D : -0.5D;
+                var timeToStop = selfSpeed / system.Game.HockeyistSpeedUpFactor;
+
+                if (timeToTarget < timeToStop)
+                {
+                    system.Move.SpeedUp = rush ? -0.5 : 1 - k;
+                }
+                else
+                {
+                    system.Move.SpeedUp = rush ? -1 : -k;
+                }
+
                 system.Move.Turn = system.Self.GetAngleTo(target.X, target.Y) - Math.PI;
             }
-            else
+            else //движение вперед - цель передомной
             {
-                system.Move.SpeedUp = rush ? 1D : 0.6D;
+                var timeToStop = selfSpeed / system.Game.HockeyistSpeedDownFactor;
+
+                if (timeToTarget < timeToStop)
+                {
+                    system.Move.SpeedUp = rush ? 0.5 : k - 1;
+                }
+                else
+                {
+                    system.Move.SpeedUp = rush ? 1 : k;
+                }
+
+                system.Move.SpeedUp = rush ? 1D : k;
                 system.Move.Turn = system.Self.GetAngleTo(target.X, target.Y);
             }
         }
@@ -144,9 +210,21 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             double angleToNet = system.Self.GetAngleTo(netX, netY);
             system.Move.Turn = angleToNet;
 
-            if (Math.Abs(angleToNet) < 1.0D * Math.PI / 180.0D)
+            if (Math.Abs(angleToNet) < 1.0D * Math.PI / 180.0D || system.Self.SwingTicks>0)
             {
-                system.Move.Action = ActionType.Strike;
+                var closestEnemy = system.GetClosestEnemy();
+
+                var nextEnemyPosition = new Point(closestEnemy.X + closestEnemy.SpeedX, closestEnemy.Y + closestEnemy.SpeedY);
+                var enemyDoNotThreat = system.Self.GetDistanceTo(nextEnemyPosition.X, nextEnemyPosition.Y) > system.Game.StickLength*3/2;
+
+                if (enemyDoNotThreat && system.Self.SwingTicks < system.Game.MaxEffectiveSwingTicks)
+                {
+                    system.Move.Action = ActionType.Swing;
+                }
+                else
+                {
+                    system.Move.Action = ActionType.Strike;
+                }
             }
         }
     }
@@ -180,7 +258,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             ////{
             ////    PursuePuck(system);
             ////}
-            else if (system.World.Puck.GetDistanceTo(net.X, net.Y) > system.Self.GetDistanceTo(net.X, net.Y) && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id) //puck is closer to net than self
+            else if (system.World.Puck.GetDistanceTo(net.X, net.Y) < system.Self.GetDistanceTo(net.X, net.Y) && system.World.Puck.OwnerPlayerId != system.World.GetMyPlayer().Id) //puck is closer to net than self
             {
                 DoAction.MoveTo(system, new Point { X = defX, Y = defY });
             }
@@ -243,8 +321,8 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var player = system.World.GetMyPlayer();
 
             var distanceToPuck = system.Self.GetDistanceTo(system.World.Puck.X, system.World.Puck.Y);
-            var closestEnemy = system.World.Hockeyists.Where(_ => !_.IsTeammate && _.Type != HockeyistType.Goalie).OrderBy(_ => _.GetDistanceTo(system.Self)).FirstOrDefault();
-
+            var closestEnemy = GetClosestEnemy(system);
+            
             if (distanceToPuck < system.Game.StickLength)
             {
                 if (system.World.Puck.OwnerPlayerId == system.World.GetOpponentPlayer().Id) //enemy with puck at strikerange
@@ -280,7 +358,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                         }
                         else
                         {//todo: add probability
-                            if ((Math.Abs(system.World.Puck.SpeedX) + Math.Abs(system.World.Puck.SpeedX)) / 2 > 22 && PuckMovingIntoOurNet(system.World.Puck.X, system.World.Puck.SpeedX, player.NetFront) && Math.Abs(system.Self.GetAngleTo(player.NetFront, (player.NetTop + player.NetBottom) / 2)) > Math.PI / 2)
+                            if ((Math.Abs(system.World.Puck.SpeedX) + Math.Abs(system.World.Puck.SpeedX)) / 2 > 18 && PuckMovingIntoOurNet(system.World.Puck.X, system.World.Puck.SpeedX, player.NetFront) && Math.Abs(system.Self.GetAngleTo(player.NetFront, (player.NetTop + player.NetBottom) / 2)) > Math.PI / 2)
                                 system.Move.Action = ActionType.Strike;
                             else
                                 system.Move.Action = ActionType.TakePuck;
@@ -288,22 +366,43 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                     }
                 }
             }
-            else if (closestEnemy != null && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength * 2 / 3 && system.Self.RemainingCooldownTicks == 0)
+            else if (closestEnemy != null
+                && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength * 2 / 3
+                && system.Self.RemainingCooldownTicks == 0
+                && Math.Abs(Math.Abs(system.Self.GetAngleTo(closestEnemy) - system.Game.StickSector / 2)) < 0.15
+                && closestEnemy.State != HockeyistState.KnockedDown
+                )
             {
                 var enemyAngle = Math.Abs(system.Self.GetAngleTo(closestEnemy));
-                if (enemyAngle > system.Game.StickSector / 2 && Math.Abs(enemyAngle - system.Game.StickSector / 2) > 0.15)
+                if (enemyAngle > system.Game.StickSector / 2)
                 {
                     DoAction.FaceTo(system, new Point { X = closestEnemy.X, Y = closestEnemy.Y });
                 }
                 else
                 {
-                    system.Move.Action = ActionType.Strike;
+                    var nextEnemyPosition = new Point(closestEnemy.X + closestEnemy.SpeedX, closestEnemy.Y + closestEnemy.SpeedY);
+                    var enemyWillBeInZoneNextTurn = system.Self.GetDistanceTo(nextEnemyPosition.X, nextEnemyPosition.Y) < system.Game.StickLength * 1 / 2
+                        && Math.Abs(system.Self.GetAngleTo(nextEnemyPosition.X, nextEnemyPosition.Y)) < system.Game.StickSector / 2;
+
+                    if (enemyWillBeInZoneNextTurn && system.Self.SwingTicks < system.Game.MaxEffectiveSwingTicks)
+                    {
+                        system.Move.Action = ActionType.Swing;
+                    }
+                    else
+                    {
+                        system.Move.Action = ActionType.Strike;
+                    }
                 }
             }
             else
             {
                 DoAction.MoveTo(system, system.World.Puck.ToPoint());
             }
+        }
+
+        public static Hockeyist GetClosestEnemy(this System system)
+        {
+            return system.World.Hockeyists.Where(_ => !_.IsTeammate && _.Type != HockeyistType.Goalie).OrderBy(_ => _.GetDistanceTo(system.Self)).FirstOrDefault();
         }
 
         private static bool PuckMovingIntoOurNet(double puckX, double speed, double netX)
@@ -318,8 +417,10 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
             var netX = (player.NetBack + player.NetFront) / 2;
             var netY = (player.NetBottom + player.NetTop) / 2;
+            var kx = system.Game.GoalNetHeight*2;
+            var ky = system.Game.GoalNetHeight/1.8;
 
-            if (system.Self.GetDistanceTo(netX, netY) < 450)
+            if (system.Self.GetDistanceTo(netX, netY) < kx*1.1)
             {
                 DoAction.Strike(system);
             }
@@ -327,11 +428,11 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             {
                 var strikePosition = new Point
                 {
-                    X = system.Self.X > netX ? netX + 400 : netX - 400,
-                    Y = system.Self.Y > netY ? player.NetBottom + (system.World.Height - player.NetBottom) / 4 : player.NetTop - (player.NetTop / 4)
+                    X = system.Self.X > netX ? netX + kx : netX - kx,
+                    Y = system.Self.Y > netY ? netY + ky : netY - ky
                 };
 
-                DoAction.MoveTo(system, strikePosition);
+                DoAction.MoveTo(system, strikePosition, false);
             }
         }
     }
