@@ -57,6 +57,16 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             else
             {
                 var role = _team[self.Id];
+                if (_team.ContainsKey(system.World.Puck.OwnerHockeyistId))
+                {
+                    if (_team[system.World.Puck.OwnerHockeyistId] == HockeyistRole.Defender &&
+                        role == HockeyistRole.Atacker)
+                    {
+                        _team[system.World.Puck.OwnerHockeyistId] = HockeyistRole.Atacker;
+                        _team[self.Id] = HockeyistRole.Defender;
+                    }
+                }
+
                 if (role == HockeyistRole.Atacker)
                     FollowTactics.PursuePuck(system);
                 else
