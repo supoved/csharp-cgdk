@@ -246,9 +246,9 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var player = system.World.GetMyPlayer();
             var net = GetNetPoint(system, true);
 
-            var puckDistanceKoef = (100 * Math.Abs(system.World.Puck.X - net.X) / system.World.Width) + 100;
+            var puckDistanceKoef = system.World.Puck.Radius*2 + system.Self.Radius*1.5;
             //var puckDistanceKoef = 200;
-            double defX = (player.NetBack > player.NetFront ? -1 : 1) * puckDistanceKoef + net.X;
+            double defX = (player.NetBack > player.NetFront ? -1 : 1) * puckDistanceKoef + player.NetFront;
 
             double defY = net.Y + (Math.Abs(system.World.Puck.Y - net.Y) > 100 ? 1 : 0) * (system.World.Puck.Y > net.Y ? -1 : 1) * (player.NetBottom - player.NetTop) / 3;
 
@@ -367,7 +367,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                         }
                         else
                         {//todo: add probability
-                            if ((Math.Abs(system.World.Puck.SpeedX) + Math.Abs(system.World.Puck.SpeedX)) / 2 > 18 && PuckMovingIntoOurNet(system.World.Puck.X, system.World.Puck.SpeedX, player.NetFront) && Math.Abs(system.Self.GetAngleTo(player.NetFront, (player.NetTop + player.NetBottom) / 2)) > Math.PI / 2)
+                            if ((Math.Abs(system.World.Puck.SpeedX) + Math.Abs(system.World.Puck.SpeedX)) / 2 > 14 && PuckMovingIntoOurNet(system.World.Puck.X, system.World.Puck.SpeedX, player.NetFront) && Math.Abs(system.Self.GetAngleTo(player.NetFront, (player.NetTop + player.NetBottom) / 2)) > Math.PI / 2)
                                 system.Move.Action = ActionType.Strike;
                             else
                                 system.Move.Action = ActionType.TakePuck;
@@ -376,7 +376,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                 }
             }
             else if (closestEnemy != null
-                && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength * 2 / 3
+                && closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength * 3 / 4
                 && system.Self.RemainingCooldownTicks == 0
                 && Math.Abs(Math.Abs(system.Self.GetAngleTo(closestEnemy) - system.Game.StickSector / 2)) < 0.15
                 && closestEnemy.State != HockeyistState.KnockedDown
@@ -391,7 +391,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                 {
                     var nextEnemyPosition = new Point(closestEnemy.X + closestEnemy.SpeedX, closestEnemy.Y + closestEnemy.SpeedY);
                     var enemyWillBeInZoneNextTurn = system.Self.GetDistanceTo(nextEnemyPosition.X, nextEnemyPosition.Y) < system.Game.StickLength * 1 / 2
-                        && Math.Abs(system.Self.GetAngleTo(nextEnemyPosition.X, nextEnemyPosition.Y)) < system.Game.StickSector / 2;
+                        && Math.Abs(system.Self.GetAngleTo(nextEnemyPosition.X, nextEnemyPosition.Y)) < system.Game.StickSector * 3/4;
 
                     if (enemyWillBeInZoneNextTurn && system.Self.SwingTicks < system.Game.MaxEffectiveSwingTicks)
                     {
