@@ -146,7 +146,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             //todo: calculate fastast way with analizing current position and speed
             var distanceToTarget = system.Self.GetDistanceTo(target.X, target.Y);
             var angleToTarget = system.Self.GetAngleTo(target.X, target.Y);
-            var selfSpeed = Math.Sqrt(Math.Abs(system.Self.SpeedX) + Math.Abs(system.Self.SpeedY));
+            var selfSpeed = system.SpeedValue(system.Self.SpeedX, system.Self.SpeedY);
 
             var timeToTarget = distanceToTarget / selfSpeed;
             var k = distanceToTarget / system.Game.StickLength > 1 ? 1 : (distanceToTarget % system.Game.StickLength) / 10;
@@ -468,38 +468,41 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var closestEnemy = system.GetClosestEnemy();
 
             var netX = (player.NetBack + player.NetFront) / 2;
-            var netY = (player.NetBottom + player.NetTop) / 2;
-            var kx = system.Game.GoalNetHeight * 2;
-            var ky = system.Game.GoalNetHeight / 1.8;
+            var netY = (player.NetBottom + player.NetTop) / 2.2;
+            var kx = system.Game.GoalNetHeight * 1.6;
 
             var strikePosition = new Point
             {
                 X = system.Self.X > netX ? netX + kx : netX - kx,
-                Y = system.Self.Y > netY ? netY + ky : netY - ky
+                Y = system.Self.Y > netY ? player.NetBottom + system.World.Puck.Radius : player.NetTop - system.World.Puck.Radius
             };
 
-            if (system.Self.GetDistanceTo(netX, netY) < kx * 1.1)
+            var manuverPosition = new Point
             {
-                DoAction.Strike(system);
+                X = system.Self.X > netX ? netX + kx : netX - kx,
+                Y = system.Self.Y > netY ? player.NetBottom + 2*system.World.Puck.Radius : player.NetTop - 2*system.World.Puck.Radius
+            };
+                
+            if (system.Self.GetDistanceTo(netX, netY) < system.Game.GoalNetHeight * 2)
+            {
+                if (system.Self.GetDistanceTo(strikePosition.X, strikePosition.Y) < system.Game.StickLength/2)
+                {
+                    DoAction.Strike(system);
+                }
+                else if (system.Self.GetDistanceTo(strikePosition.X, strikePosition.Y) < system.Game.StickLength &&
+                         closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength)
+                {
+                    DoAction.Strike(system);
+                }
+                else
+                {
+                    DoAction.MoveTo(system, strikePosition, false);
+                }
             }
             else
             {
-                DoAction.MoveTo(system, strikePosition, false);
+                DoAction.MoveTo(system, manuverPosition);
             }
-
-            //if (system.Self.GetDistanceTo(strikePosition.X, strikePosition.Y) < system.Game.StickLength / 2)
-            //{
-            //    DoAction.Strike(system);
-            //}
-            //else if (system.Self.GetDistanceTo(strikePosition.X, strikePosition.Y) < system.Game.StickLength &&
-            //    closestEnemy.GetDistanceTo(system.Self) < system.Game.StickLength)
-            //{
-            //    DoAction.Strike(system);
-            //}
-            //else
-            //{
-            //    DoAction.MoveTo(system, strikePosition, false);
-            //}
         }
     }
 }
