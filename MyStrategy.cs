@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -13,13 +14,16 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
     public sealed class MyStrategy : IStrategy
     {
         private static Dictionary<long, HockeyistRole> _team = new Dictionary<long, HockeyistRole>();
+        private static List<Shout> _shouts = new List<Shout>();
 
         public void Move(Hockeyist self, World world, Game game, Move move)
         {
-            var system = new Environment(self, world, game, move);
+            _shouts = _shouts.Where(_ => _.Timer - 1 > 0).ToList();
+            _shouts.ForEach(_ => { _.Timer -= 1; });
+            var system = new Environment(self, world, game, move, _shouts);
 
             if (!_team.ContainsKey(self.Id))
-                _team.Add(self.Id, PickRole(_team));
+                _team.Add(self.Id, PickRole(system, _team));
 
             if (world.GetMyPlayer().IsJustScoredGoal || world.GetMyPlayer().IsJustMissedGoal)
                 return;
@@ -72,24 +76,29 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                     FollowTactics.PursuePuck(system);
                 else
                 {
-                    FollowTactics.Defend(system);
+                    FollowTactics.DefendNet(system);
                 }
             }
         }
 
-        private HockeyistRole PickRole(Dictionary<long, HockeyistRole> t)
+        private HockeyistRole PickRole(Environment system, Dictionary<long, HockeyistRole> t)
         {
-            if (!t.Any())
+            if (t.Any(_ => _.Value == HockeyistRole.Defender))
             {
                 return HockeyistRole.Atacker;
             }
-            else if (t.Count % 2 == 1)
+
+            var teamNet = FollowTactics.GetNetPoint(system, true);
+            var distanceToNet = system.Self.GetDistanceTo(teamNet.X, teamNet.Y);
+
+            var team = system.World.Hockeyists.Where(_ => _.IsTeammate && _.Type != HockeyistType.Goalie && _.Id != system.Self.Id);
+            if (team.All(_ => _.GetDistanceTo(teamNet.X, teamNet.Y) >= distanceToNet))
             {
                 return HockeyistRole.Defender;
             }
             else
             {
-                return HockeyistRole.Support;
+                return HockeyistRole.Atacker;
             }
         }
     }
@@ -104,16 +113,39 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
         public World World { get; set; }
         public Game Game { get; set; }
         public Move Move { get; set; }
+        public IList<Shout> Shouts { get; set; }
 
         public HockeyistRole SelfRole { get; set; }
 
-        public Environment(Hockeyist self, World world, Game game, Move move)
+        public Environment(Hockeyist self, World world, Game game, Move move, IList<Shout> shouts)
         {
             Self = self;
             World = world;
             Game = game;
             Move = move;
+            Shouts = shouts;
         }
+    }
+
+    public class Shout
+    {
+        public Shout()
+        {
+            Timer = 25;
+        }
+
+        public Unit Self { get; set; }
+        public Unit Target { get; set; }
+
+        public ShoutType ShoutType { get; set; }
+
+        public int Timer { get; set; }
+    }
+
+    public enum ShoutType
+    {
+        Strike,
+        Pass
     }
 
     public struct Point
@@ -127,8 +159,6 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             this.X = x;
             this.Y = y;
         }
-
-
     }
 
     public enum HockeyistRole
@@ -152,6 +182,10 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
     public static class DoAction
     {
+        public static void MoveTo(Environment environment, Unit unit, bool rush = true)
+        {
+            MoveTo(environment, new Point { X = unit.X, Y = unit.Y }, rush);
+        }
         public static void MoveTo(Environment environment, Point target, bool rush = true)
         {
             //todo: calculate fastast way with analizing current position and speed
@@ -163,7 +197,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             var timeToTarget = environment.CalculateTicketsToGetToPosition(target.X, target.Y);
             var k = distanceToTarget > environment.Game.StickLength ? distanceToTarget / environment.Game.StickLength * 2 : distanceToTarget / environment.Game.StickLength;
 
-            if (Math.Abs(angleToTarget) > (Math.PI * 2) / 3 && distanceToTarget < environment.Game.StickLength * 4) //движение назад, так быстрее
+            if (Math.Abs(angleToTarget) > (Math.PI * 2) / 3 && distanceToTarget < environment.Game.StickLength * 2) //движение назад, так быстрее
             {
                 var timeToStop = selfSpeed;
 
@@ -178,7 +212,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
                 environment.Move.Turn = environment.Self.GetAngleTo(target.X, target.Y) - Math.PI;
             }
-            else if (Math.Abs(angleToTarget) < (Math.PI * 2) / 3 && Math.Abs(angleToTarget) > Math.PI/3 && distanceToTarget < environment.Game.StickLength * 4) // маневр цель с боку
+            else if (Math.Abs(angleToTarget) < (Math.PI * 2) / 3 && Math.Abs(angleToTarget) > Math.PI / 3 && distanceToTarget < environment.Game.StickLength * 4) // маневр цель с боку
             {
                 environment.Move.Turn = environment.Self.GetAngleTo(target.X, target.Y);
             }
@@ -197,12 +231,28 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
                 environment.Move.Turn = environment.Self.GetAngleTo(target.X, target.Y);
             }
-            
         }
 
         public static void FaceTo(Environment environment, Point target)
         {
             environment.Move.Turn = environment.Self.GetAngleTo(target.X, target.Y);
+        }
+
+        public static void Pass(Environment environment, Unit passPartner)
+        {
+            var angleToPartner = environment.Self.GetAngleTo(passPartner);
+
+            if (Math.Abs(angleToPartner) < 59.0D * Math.PI / 180.0D)
+            {
+                environment.Move.PassAngle = angleToPartner;
+                environment.Move.PassPower = environment.Self.GetDistanceTo(passPartner) / (environment.Game.WorldWidth / 4);
+                environment.Move.Action = ActionType.Pass;
+                environment.Shouts.Add(new Shout { Self = environment.Self, ShoutType = ShoutType.Pass, Target = passPartner });
+            }
+            else
+            {
+                environment.Move.Turn = environment.Self.GetAngleTo(passPartner);
+            }
         }
 
         public static void Stop(Environment environment)
@@ -236,6 +286,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                 }
                 else
                 {
+                    environment.Shouts.Add(new Shout { Self = environment.Self, ShoutType = ShoutType.Strike });
                     environment.Move.Action = ActionType.Strike;
                 }
             }
@@ -247,7 +298,25 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
     public static class FollowTactics
     {
-        public static void Defend(Environment environment)
+        public static void SupportAttack(Environment environment)
+        {
+            var net = GetNetPoint(environment, false);
+
+            double defX = environment.World.GetOpponentPlayer().NetFront < environment.Self.X ? 3 * (environment.World.Width / 4) - environment.Game.GoalNetWidth : (environment.World.Width / 4) + environment.Game.GoalNetWidth;
+            double defY = environment.Self.Y > environment.World.Height / 2 ? environment.World.Height - environment.World.Height / 3 : environment.World.Height / 3;
+
+            if (environment.Self.GetDistanceTo(defX, defY) > environment.Game.StickLength)
+            {
+                DoAction.MoveTo(environment, new Point { X = defX, Y = defY }, false);
+            }
+            else
+            {
+                DoAction.FaceTo(environment, new Point(defX, defY));
+                DoAction.Stop(environment);
+            }
+        }
+
+        public static void DefendNet(Environment environment)
         {
             var player = environment.World.GetMyPlayer();
             var net = GetNetPoint(environment, true);
@@ -272,23 +341,28 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             {
                 PursuePuck(environment);
             }
+            else if (distanceToPuck + environment.Game.StickLength < minDistanceToPuck && environment.World.Puck.OwnerPlayerId == -1) //puck is closer to me than other players and not undeк control
+            {
+                PursuePuck(environment);
+            }
             else if (environment.World.Puck.GetDistanceTo(net.X, net.Y) < environment.Self.GetDistanceTo(net.X, net.Y) && environment.World.Puck.OwnerPlayerId != environment.World.GetMyPlayer().Id) //puck is closer to net than self
             {
                 DoAction.MoveTo(environment, new Point { X = defX, Y = defY });
             }
-            else if (distanceToPuck < environment.Game.StickLength * 1.5 && environment.World.Puck.OwnerPlayerId != environment.World.GetMyPlayer().Id) // puck is not far and not under control
-            {
-                PursuePuck(environment);
-            }
-            else if (distanceToPuck < minDistanceToPuck && environment.World.Puck.OwnerPlayerId != environment.World.GetMyPlayer().Id) //puck is closer to me than other players and not unde control
-            {
-                PursuePuck(environment);
-            }
+            //else if (distanceToPuck < environment.Game.StickLength * 1.5 && environment.World.Puck.OwnerPlayerId != environment.World.GetMyPlayer().Id) // puck is not far and not under control
+            //{
+            //    PursuePuck(environment);
+            //}
             else if (distanceToNet > environment.Game.StickLength * 2) // I am too far away
             {
                 DoAction.MoveTo(environment, new Point { X = defX, Y = defY });
             }
-            else if (distanceToNet > environment.World.Puck.Radius*2) // I am near def point
+            else if (isPuckInStrikeZone && environment.World.Puck.OwnerPlayerId == environment.World.GetOpponentPlayer().Id)
+            {
+                DoAction.Stop(environment);
+                DoAction.FaceTo(environment, environment.World.Puck.ToPoint());
+            }
+            else if (distanceToNet > environment.World.Puck.Radius * 2) // I am near def point
             {
                 DoAction.MoveTo(environment, new Point { X = defX, Y = defY }, false);
             }
@@ -299,22 +373,22 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             }
         }
 
-        private static double GetMinDustanceToPuck(Environment environment)
+        public static double GetMinDustanceToPuck(Environment environment)
         {
             return environment.World.Hockeyists
-                .Where(_ => _.Type != HockeyistType.Goalie)
+                .Where(_ => _.Type != HockeyistType.Goalie && _.Id != environment.Self.Id)
                 .Select(_ => new { distance = environment.World.Puck.GetDistanceTo(_), isTeammate = _.IsTeammate })
-                .Select(_ => _.isTeammate ? _.distance / 2 : _.distance)
+                .Select(_ => _.distance)
                 .Min();
         }
 
-        private static bool IsPuckInStrikeZone(Environment environment)
+        public static bool IsPuckInStrikeZone(Environment environment)
         {
             var net = GetNetPoint(environment, true);
             return environment.World.Puck.GetDistanceTo(net.X, net.Y) < 500;
         }
 
-        private static Point GetNetPoint(Environment environment, bool teamNet)
+        public static Point GetNetPoint(Environment environment, bool teamNet)
         {
             var player = teamNet ? environment.World.GetMyPlayer() : environment.World.GetOpponentPlayer();
 
@@ -380,7 +454,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                         }
                         else
                         {//todo: add probability
-                            if (environment.SpeedValue(environment.Self.SpeedX, environment.Self.SpeedY) > 10 && PuckMovingIntoOurNet(environment.World.Puck.X, environment.World.Puck.SpeedX, player.NetFront) && Math.Abs(environment.Self.GetAngleTo(player.NetFront, (player.NetTop + player.NetBottom) / 2)) > Math.PI / 2)
+                            if (environment.SpeedValue(environment.World.Puck.SpeedX, environment.World.Puck.SpeedY) > 30 && PuckMovingIntoOurNet(environment.World.Puck.X, environment.World.Puck.SpeedX, player.NetFront) && Math.Abs(environment.Self.GetAngleTo(player.NetFront, (player.NetTop + player.NetBottom) / 2)) > Math.PI / 2)
                                 environment.Move.Action = ActionType.Strike;
                             else
                                 environment.Move.Action = ActionType.TakePuck;
@@ -404,7 +478,7 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
                 {
                     var nextEnemyPosition = new Point(closestEnemy.X + closestEnemy.SpeedX, closestEnemy.Y + closestEnemy.SpeedY);
                     var enemyWillBeInZoneNextTurn = environment.Self.GetDistanceTo(nextEnemyPosition.X, nextEnemyPosition.Y) < environment.Game.StickLength * 1 / 2
-                        && Math.Abs(environment.Self.GetAngleTo(nextEnemyPosition.X, nextEnemyPosition.Y)) < environment.Game.StickSector * 3/4;
+                        && Math.Abs(environment.Self.GetAngleTo(nextEnemyPosition.X, nextEnemyPosition.Y)) < environment.Game.StickSector * 3 / 4;
 
                     if (enemyWillBeInZoneNextTurn && environment.Self.SwingTicks < environment.Game.MaxEffectiveSwingTicks)
                     {
@@ -484,7 +558,6 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
             return result;
         }
 
-
         public static void Atack(Environment environment)
         {
             var player = environment.World.GetOpponentPlayer();
@@ -502,13 +575,13 @@ namespace Com.CodeGame.CodeHockey2014.DevKit.CSharpCgdk
 
             var manuverPosition = new Point
             {
-                X = (environment.World.Width - environment.Game.GoalNetWidth)/2,
+                X = (environment.World.Width - environment.Game.GoalNetWidth) / 2,
                 Y = environment.Self.Y < netY ? 4 * environment.Self.Radius + 2 * environment.World.Puck.Radius : environment.World.Height - 2 * environment.World.Puck.Radius - 4 * environment.Self.Radius
             };
-                
-            if (environment.Self.GetDistanceTo(netX, netY) < (environment.World.Width - environment.Game.GoalNetWidth)*2/3)
+
+            if (environment.Self.GetDistanceTo(netX, netY) < (environment.World.Width - environment.Game.GoalNetWidth) * 2 / 3)
             {
-                if (environment.Self.GetDistanceTo(strikePosition.X, strikePosition.Y) < environment.Game.StickLength/2)
+                if (environment.Self.GetDistanceTo(strikePosition.X, strikePosition.Y) < environment.Game.StickLength / 2)
                 {
                     DoAction.Strike(environment);
                 }
